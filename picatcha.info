@@ -1,0 +1,4 @@
+name = Picatcha
+description = "Uses the Picatcha web service"
+package = "Spam control"
+dependencies = captcha

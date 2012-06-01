@@ -1,0 +1,142 @@
+<?php
+/**
+ * @file
+ * Uses the Picatcha web service to improve the CAPTCHA system.
+ */
+
+/**
+ * Implements hook_help().
+ */
+function picatcha_help($section = '') {
+  $output = '';
+  switch ($section) {
+    case 'admin/modules#name':
+      $output .= t('Picatcha');
+      break;
+    case 'admin/modules#description':
+    case 'admin/user/captcha/picatcha':
+      $output .= t('Uses the <a href="@url" target="_blank">Picatcha</a> web service to improve the CAPTCHA system.', array('@url' => url('http://picatcha.com')));
+      break;
+    case 'admin/help#picatcha':
+      $output .= '<p>' .
+        t('Uses the Picatcha web service to improve the CAPTCHA module. For more information on what Picatcha is, visit <a href="@url" target="_blank">the official website</a>.', array('@url' => url('http://picatcha.com'))) .
+        '</p><h3>' .
+        t('Configuration') .
+        '</h3><p>' .
+        t('The settings associated with Picatcha can be found in the <a href="@picatchatab">Picatcha tab</a>, in the <a href="@captchasettings">CAPTCHA settings</a>. You must set your public and private Picatcha keys in order to use the module. Once the public and private keys are set, visit the <a href="@captchasettings">CAPTCHA settings</a>, where you can choose where Picatcha should be displayed.', array('@picatchatab' => url('admin/user/captcha/picatcha'), '@captchasettings' => url('admin/user/captcha'))) .
+        '</p>';
+      break;
+  }
+  return $output;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function picatcha_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+    $items[] = array(
+      'path' => 'admin/user/captcha/picatcha',
+      'title' => 'Picatcha',
+      'description' => 'Administer the Picatcha web service.',
+      'callback' => 'drupal_get_form',
+      'callback arguments' => array('picatcha_admin_settings'),
+      'access' => user_access('administer Picatcha'),
+      'type' => MENU_LOCAL_TASK,
+    );
+  }
+  return $items;
+}
+
+/**
+ * Implements hook_perm().
+ */
+function picatcha_perm() {
+  return array('administer Picatcha');
+}
+
+/**
+ * Implements admin settings().
+ */
+function picatcha_admin_settings() {
+  require_once('picatcha.inc');
+  @(include_once('picatcha/picatchalib.php')) or _picatcha_library_not_found();
+  $form = array();
+  $form['picatcha_public_key'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Public Key'),
+    '#default_value' => variable_get('picatcha_public_key', ''),
+    '#maxlength' => 40,
+    '#description' => t('The public key given to you when you <a href="@url" target="_blank">registered at picatcha.com</a>.', array('@url' => url(picatcha_get_signup_url($_SERVER['SERVER_NAME'], variable_get('site_name', ''))))),
+    '#required' => TRUE,
+  );
+  $form['picatcha_private_key'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Private Key'),
+    '#default_value' => variable_get('picatcha_private_key', ''),
+    '#maxlength' => 40,
+    '#description' => t('The private key given to you when you <a href="@url" target="_blank">registered at picatcha.com</a>.', array('@url' => url(picatcha_get_signup_url($_SERVER['SERVER_NAME'], variable_get('site_name', ''))))),
+    '#required' => TRUE,
+  );
+
+  return system_settings_form($form);
+}
+
+/**
+ * Implements hook_captcha().
+ */
+function picatcha_captcha() {
+  $args = func_get_args();
+  $op = array_shift($args);
+  switch ($op) {
+    case 'list':
+      return array('Picatcha');
+
+    case 'generate':
+      $captcha_type = array_shift($args);
+      $result = array();
+      if ($captcha_type == 'Picatcha') {
+        require_once('picatcha.inc');
+        @(include_once('picatcha/picatchalib.php')) or _picatcha_library_not_found();
+
+        // Retrieve configuration variables from database
+        $picatcha_public_key = variable_get('picatcha_public_key', '');
+        $picatcha_form_value = NULL;
+
+        // Create the form
+        // tell captcha to preprocess the form
+        $result['preprocess'] = TRUE;
+        // require TRUE to be returned
+        $result['solution'] = TRUE;
+        $result['form']['captcha_challenge'] = array(
+          '#type' => 'item',
+          '#description' => picatcha_get_html($picatcha_public_key, NULL),
+          '#required' => TRUE,
+          '#value' => NULL,
+        );
+      }
+      return $result;
+
+    case 'preprocess':
+      require_once('picatcha.inc');
+      $challenge = $_POST['picatcha']['token'];
+      $response = $_POST['picatcha']['r'];
+
+      $resp = picatcha_check_answer(
+        variable_get('picatcha_private_key', ''),
+        $_SERVER['REMOTE_ADDR'],
+        $_SERVER['HTTP_USER_AGENT'],
+        $challenge,
+        $response
+      );
+      if ($resp->is_valid) {
+        return TRUE;
+      }
+      else {
+        form_set_error('captcha_response', t('The images you chose for CAPTCHA were incorrect.') . $resp->error);
+        return FALSE;
+      }
+    break;
+  }
+}
