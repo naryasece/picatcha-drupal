@@ -1,0 +1,129 @@
+<?php
+/**
+ * @file
+ * Uses the Picatcha web service to improve the CAPTCHA system.
+ */
+
+/**
+ * Implements hook_help().
+ */
+function picatcha_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case 'admin/modules#name':
+      $output .= t('Picatcha');
+      break;
+    case 'admin/modules#description':
+    case 'admin/user/captcha/picatcha':
+      $output .= t('Uses the <a href="@url" target="_blank">Picatcha</a> web service to improve the CAPTCHA system.', array('@url' => url('http://picatcha.com')));
+      break;
+    case 'admin/help#picatcha':
+      $output .= '<p>' .
+        t('Uses the Picatcha web service to improve the CAPTCHA module. For more information on what Picatcha is, visit <a href="@url" target="_blank">the official website</a>.', array('@url' => url('http://picatcha.com'))) .
+        '</p><h3>' .
+        t('Configuration') .
+        '</h3><p>' .
+        t('The settings associated with Picatcha can be found in the <a href="@picatchatab">Picatcha tab</a>, in the <a href="@captchasettings">CAPTCHA settings</a>. You must set your public and private Picatcha keys in order to use the module. Once the public and private keys are set, visit the <a href="@captchasettings">CAPTCHA settings</a>, where you can choose where Picatcha should be displayed.', array('@picatchatab' => url('admin/user/captcha/picatcha'), '@captchasettings' => url('admin/user/captcha'))) .
+        '</p>';
+      break;
+  }
+  return $output;
+}
+
+
+/**
+ * Implements hook_menu().
+ */
+function picatcha_menu() {
+  $items = array();
+  $items['admin/user/captcha/picatcha'] = array(
+    'title' => 'Picatcha',
+    'description' => 'Administer the Picatcha web service.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('picatcha_admin_settings'),
+    'access arguments' => array('administer Picatcha'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'picatcha.admin.inc'
+  );
+  return $items;
+}
+
+
+/**
+ * Implements hook_perm().
+ */
+function picatcha_perm() {
+  return array('administer Picatcha');
+}
+
+
+/**
+ * Implements hook_captcha().
+ */
+function picatcha_captcha() {
+  $args = func_get_args();
+  $op = array_shift($args);
+  switch ($op) {
+    case 'list':
+      return array('Picatcha');
+
+    case 'generate':
+      $captcha_type = array_shift($args);
+      $captcha = array();
+      if ($captcha_type == 'Picatcha') {
+        // Load the Picatcha library.
+        _picatcha_load_library();
+
+        // Check if Picatcha is available and show Math if not.
+        $connect = @fsockopen(PICATCHA_API_SERVER, 80);
+        if (!$connect) {
+          return captcha_captcha('generate', 'Math', $args);
+        }
+        fclose($connect);
+
+        // Retrieve configuration variables from database
+        $picatcha_public_key = variable_get('picatcha_public_key', '');
+
+        // Create the form. Captcha requires TRUE to be returned in solution.
+        $captcha['solution'] = TRUE;
+        $captcha['captcha_validate'] = 'picatcha_captcha_validation';
+        $html = picatcha_get_html($picatcha_public_key, NULL);
+        $captcha['form']['captcha_response'] = array(
+          '#type' => 'hidden',
+          '#value' => 'Picatcha',
+        );
+        $captcha['form']['captcha_form'] = array(
+          '#type' => 'item',
+          '#value' => $html,
+        );
+      }
+      return $captcha;
+  }
+}
+
+
+/**
+ * CAPTCHA Callback; Validates the Picatcha code.
+ */
+function picatcha_captcha_validation($solution = NULL, $response = NULL) {
+  global $user;
+  if ($response == 'Picatcha' && isset($_POST['picatcha']['token']) && isset($_POST['picatcha']['r'])) {
+    $resp = picatcha_check_answer(
+      variable_get('picatcha_private_key', ''),
+      $_SERVER['REMOTE_ADDR'],
+      $_SERVER['HTTP_USER_AGENT'],
+      $_POST['picatcha']['token'],
+      $_POST['picatcha']['r']
+    );
+    return $resp->is_valid;
+  }
+  return FALSE;
+}
+
+
+/**
+ * Load the Picatcha library.
+ */
+function _picatcha_load_library() {
+  module_load_include('php', 'picatcha', 'picatcha/picatchalib');
+}

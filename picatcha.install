@@ -1,0 +1,14 @@
+<?php
+/**
+ * @file
+ * Provides install, updated, and uninstall functions for picatcha.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function picatcha_uninstall() {
+  // Delete all the Picatcha variables and then clear the variable cache
+  db_query("delete from {variable} where name like '%s'", 'picatcha_%');
+  cache_clear_all('variables', 'cache');
+}
